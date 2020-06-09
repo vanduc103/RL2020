@@ -12,8 +12,8 @@ from model import build_network
 
 flags = tf.app.flags
 
-flags.DEFINE_string('experiment', 'async_dqn', 'Name of the current experiment')
-flags.DEFINE_string('dataset', '6', 'Name of dataset to run')
+flags.DEFINE_string('experiment', 'async_pg_lr0.1', 'Name of the current experiment')
+flags.DEFINE_string('dataset_path', '', 'Path to dataset to run')
 flags.DEFINE_integer('num_concurrent', 1, 'Number of concurrent actor-learner threads to use during training.')
 flags.DEFINE_integer('tmax', 100, 'Number of training timesteps.')
 flags.DEFINE_integer('agent_history_length', 4, 'Use this number of recent screens as the environment state.')
@@ -21,6 +21,7 @@ flags.DEFINE_integer('network_update_frequency', 10, 'Frequency with which each 
 flags.DEFINE_integer('target_network_update_frequency', 25, 'Reset the target network every n timesteps')
 flags.DEFINE_float('learning_rate', 0.1, 'Initial learning rate.')
 flags.DEFINE_float('gamma', 0.99, 'Reward discount rate.')
+flags.DEFINE_integer('batch_size', 1, 'Batch size')
 flags.DEFINE_integer('anneal_epsilon_timesteps', 10, 'Number of timesteps to anneal epsilon.')
 flags.DEFINE_string('summary_dir', './pg/summaries', 'Directory for storing tensorboard summaries')
 flags.DEFINE_string('checkpoint_dir', './pg/checkpoints', 'Directory for storing model checkpoints')
@@ -96,9 +97,10 @@ def actor_learner_thread(thread_id, env, session, graph_ops, num_actions, summar
 
     time.sleep(3*thread_id)
     t = 0
-    max_reward = 0
-    batch_size = 2
+    batch_size = FLAGS.batch_size
+    min_loss = 9999
     while T < TMAX:
+        T += 1
         for b in range(int(env.size/batch_size)):
             # Get initial game observation
             s_t = env.data_state(b, batch_size)
@@ -133,7 +135,7 @@ def actor_learner_thread(thread_id, env, session, graph_ops, num_actions, summar
                 #clipped_r_t = np.clip(r_t, 0, 1)
                 y_batch.append(-r_t)
                 y_batch = np.reshape(np.array(y_batch), [-1])
-                print(y_batch.shape)
+                #print(y_batch.shape)
         
                 rescaling_batch.append(rescaling_t)
                 rescaling_batch = np.reshape(np.array(rescaling_batch), [-1, np.array(rescaling_t).shape[1]])
@@ -144,29 +146,20 @@ def actor_learner_thread(thread_id, env, session, graph_ops, num_actions, summar
 
                 s_batch.append(s_t)
                 s_batch = np.reshape(np.array(s_batch), [-1, np.array(s_t).shape[1]])
-                print(s_batch.shape)
+                #print(s_batch.shape)
                 
         
                 # Update the state and counters
                 s_t = s_t1
-                T += 1
                 t += 1
 
                 ep_t += 1
                 ep_reward += r_t
                 episode_ave_max_q += np.max(outrescaling_t) + np.max(outpreprocessor_t) + np.max(outclassifier_t)
 
-                print("T=",T,", t=",t)
-
-                # Save model progress
-                if t % FLAGS.checkpoint_interval == 0:
-                #if r_t > max_reward:
-                    #max_reward = r_t
-                    print("==========save(session), reward=", r_t)
-                    saver.save(session, FLAGS.checkpoint_dir+"/"+FLAGS.experiment+".ckpt", global_step = t)
+                print("T =",T,", t =",t, ", b =",b)
 
                 loss = 0
-                #if t % FLAGS.network_update_frequency == 0:
                 if len(s_batch) > 0:
                     print("===========run(grad_update)")
                     _, loss = session.run([grad_update, cost], feed_dict = {y : y_batch,
@@ -180,11 +173,13 @@ def actor_learner_thread(thread_id, env, session, graph_ops, num_actions, summar
                 preprocessor_batch = []
                 classifier_batch = []
                 y_batch = []
+
+                # Save model progress
+                if loss < min_loss:
+                    print("==========save(session), reward=", r_t, "loss=", loss)
+                    saver.save(session, FLAGS.checkpoint_dir+"/"+FLAGS.experiment+".ckpt", global_step = t)
         
                 # Print end of episode stats
-                #stats = [ep_reward, episode_ave_max_q/float(ep_t), epsilon]
-                #for i in range(len(stats)):
-                #    session.run(update_ops[i], feed_dict={summary_placeholders[i]:float(stats[i])})
                 print("THREAD:", thread_id, "/ TIME", T, "/ TIMESTEP", t, "/ EPSILON", epsilon, "/ REWARD", ep_reward, 
                     "/ AVE_MAX %.4f" % (episode_ave_max_q/float(ep_t)), "/ EPSILON PROGRESS", t/float(FLAGS.anneal_epsilon_timesteps), "/LOSS", loss)
                 break
@@ -283,32 +278,32 @@ def train(session, graph_ops, num_actions, saver):
 def evaluation(session, graph_ops, saver):
     saver.restore(session, FLAGS.checkpoint_path)
     print("Restored model weights from ", FLAGS.checkpoint_path)
-    env = Env(FLAGS.dataset)
+    env = Env(dataset_path=FLAGS.dataset_path)
 
     # Unpack graph ops
     s = graph_ops["s"]
     policy_values = graph_ops["policy_values"]
 
     for i_episode in range(FLAGS.num_eval_episodes):
-        batch_idx = 0
+        ep_reward = []
         batch_size = 1
-        s_t = env.data_state(batch_idx, batch_size)
-        ep_reward = 0
-        terminal = False
-        #while not terminal:
-        policy_rescaling, policy_preprocessor, policy_classifier = policy_values[0], policy_values[1], policy_values[2]
-        outrescaling_t = policy_rescaling.eval(session = session, feed_dict = {s : [s_t]})
-        outpreprocessor_t = policy_preprocessor.eval(session = session, feed_dict = {s : [s_t]})
-        outclassifier_t = policy_classifier.eval(session = session, feed_dict = {s : [s_t]})
+        for b in range(int(env.size/batch_size)):
+            s_t = env.data_state(batch_idx, batch_size)
+            ep_reward = 0
+            terminal = False
+            policy_rescaling, policy_preprocessor, policy_classifier = policy_values[0], policy_values[1], policy_values[2]
+            outrescaling_t = policy_rescaling.eval(session = session, feed_dict = {s : [s_t]})
+            outpreprocessor_t = policy_preprocessor.eval(session = session, feed_dict = {s : [s_t]})
+            outclassifier_t = policy_classifier.eval(session = session, feed_dict = {s : [s_t]})
 
-        rescaling_action = np.argmax(outrescaling_t)
-        preprocessor_action = np.argmax(outpreprocessor_t)
-        classifier_action = np.argmax(outclassifier_t)
+            rescaling_action = np.argmax(outrescaling_t)
+            preprocessor_action = np.argmax(outpreprocessor_t)
+            classifier_action = np.argmax(outclassifier_t)
 
-        s_t1, r_t, terminal, info = env.run_actions((rescaling_action, preprocessor_action, classifier_action), batch_idx, batch_size)
-        s_t = s_t1
-        ep_reward += r_t
-        print(ep_reward)
+            s_t1, r_t, terminal, info = env.run_actions((rescaling_action, preprocessor_action, classifier_action), batch_idx, batch_size)
+            s_t = s_t1
+            ep_reward.append(r_t)
+        print("Average reward ", sum(ep_reward)/len(ep_reward))
 
 def main():
     tf.reset_default_graph()

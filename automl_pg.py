@@ -166,7 +166,6 @@ def actor_learner_thread(thread_id, env, session, graph_ops, num_actions, summar
 
                 print("T =",T,", t =",t, ", b =",b)
                 loss = 0
-                #if terminal:
                 if len(s_batch) > 0:
                     print("===========run(grad_update)")
                     _, loss = session.run([grad_update, cost], feed_dict = {y : y_batch,
@@ -190,10 +189,6 @@ def actor_learner_thread(thread_id, env, session, graph_ops, num_actions, summar
                     saver.save(session, FLAGS.checkpoint_dir+"/"+FLAGS.experiment+".ckpt", global_step = t)
 
                 # Print end of episode stats
-                #if terminal:
-                #stats = [ep_reward, episode_ave_max_q/float(ep_t), epsilon]
-                #for i in range(len(stats)):
-                #    session.run(update_ops[i], feed_dict={summary_placeholders[i]:float(stats[i])})
                 print("THREAD:", thread_id, "/ TIME", T, "/ TIMESTEP", t, "/ EPSILON", epsilon, "/ REWARD", ep_reward, 
                     "/ AVE_MAX %.4f" % (episode_ave_max_q/float(ep_t)), "/ EPSILON PROGRESS", t/float(FLAGS.anneal_epsilon_timesteps), "/LOSS", loss)
                 break
@@ -307,7 +302,6 @@ def evaluation(session, graph_ops, saver):
         batch_size = 1
         for b in range(int(env.size/batch_size)):
             s_t = env.data_state(b, batch_size)
-            #while not terminal:
             maxlen = 5
             policy_rescaling, policy_preprocessor, policy_classifier = policy_values[0], policy_values[1], policy_values[2]
             pr_actions = np.zeros((np.array(s_t).shape[0],maxlen),dtype=np.int64)
