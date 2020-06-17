@@ -12,8 +12,8 @@ def build_network(maxlen=5, input_dim=29, vocab_size=36, hidden_dim=64, embed_di
     # compute the initial state from data states => use an NN layer
     h0 = tf.layers.dense(states, hidden_dim) # [N, hidden_dim]
 
-    # compute word embedding from words in actions to embedding vector => [N, T, embed_dim]
-    embed = tf.contrib.layers.embed_sequence(ids=X, vocab_size=36, embed_dim=embed_dim)
+    # compute action embedding from sequence of actions to embedding vector => [N, T, embed_dim]
+    embed = tf.contrib.layers.embed_sequence(ids=X, vocab_size=vocab_size, embed_dim=embed_dim)
 
     # use RNN to compute output from initial state h0 => outputs [N, T, hidden_dim]
     rnn_cell = tf.contrib.rnn.BasicRNNCell(hidden_dim)

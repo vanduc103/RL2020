@@ -70,12 +70,12 @@ class Env():
             self.action_vocab[str(vocab_list[i])] = i
 
         # load training data
-        default_dataset_path = '../dataset/'
+        default_dataset_path = 'dataset'
         files = []
         if self.dataset_path != None:
-            files = glob.glob(self.dataset_path + "*.csv")
+            files = glob.glob(os.path.join(self.dataset_path, "*.csv"))
         else:
-            files = glob.glob(default_dataset_path + "*.csv")
+            files = glob.glob(os.path.join(default_dataset_path, "*.csv"))
         for filepath in files:    
             dataset_id = os.path.basename(filepath)
             dataset_id = dataset_id.replace("dataset","").replace(".csv", "").replace("_","")
@@ -93,7 +93,7 @@ class Env():
             self.y_test_all.append(y_test)
         self.size = len(self.X_all)
 
-    def run_actions(self, actions, batch_idx, batch_size):
+    def run_actions(self, actions, batch_idx=0, batch_size=1):
         (rescaling_action, preprocessor_action, classifier_action) = actions
         rewards = []
         done = []
@@ -137,7 +137,7 @@ class Env():
 
 
     # get data state information
-    def data_state(self, batch_idx, batch_size):
+    def data_state(self, batch_idx=0, batch_size=1):
         data_states = []
         for i in range(batch_size*batch_idx, min(self.size, batch_size*(batch_idx+1))):
             categorical = None
